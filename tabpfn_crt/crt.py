@@ -57,7 +57,7 @@ def tabpfn_crt(
     # ---------------------------
     # Model for y | X
     # ---------------------------
-    y_is_cat = _is_categorical(y_tr, max_unique_cat)
+    y_is_cat = is_categorical(y_tr, max_unique_cat)
     ModelY = TabPFNClassifier if y_is_cat else TabPFNRegressor
 
     model_y = ModelY.create_default_for_version(
@@ -67,7 +67,7 @@ def tabpfn_crt(
     model_y.fit(X_tr, y_tr)
 
     full_plus = model_y.predict(X_ev, output_type="full")
-    logp_plus = _logp_from_full(full_plus, y_ev)
+    logp_plus = logp_from_full_output(full_plus, y_ev)
 
     # ---------------------------
     # Model for Xj | X_-j
@@ -76,7 +76,7 @@ def tabpfn_crt(
     Xm_ev = np.delete(X_ev, j, axis=1)
     xj_tr = X_tr[:, j]
 
-    xj_is_cat = _is_categorical(xj_tr, max_unique_cat)
+    xj_is_cat = is_categorical(xj_tr, max_unique_cat)
     ModelXJ = TabPFNClassifier if xj_is_cat else TabPFNRegressor
 
     model_xj = ModelXJ.create_default_for_version(
@@ -99,7 +99,7 @@ def tabpfn_crt(
     X_ev_masked[:, j] = np.asarray(xj_hat)
 
     full_minus = model_y.predict(X_ev_masked, output_type="full")
-    logp_minus = _logp_from_full(full_minus, y_ev)
+    logp_minus = logp_from_full_output(full_minus, y_ev)
 
     T_obs = np.mean(logp_plus)
 
@@ -169,7 +169,7 @@ def tabpfn_crt(
 
 
         full_null = model_y.predict(X_ev_null, output_type="full")
-        logp_null = _logp_from_full(full_null, y_ev)
+        logp_null = logp_from_full_output(full_null, y_ev)
 
         T_null[b] = np.mean(logp_null)
     # ---------------------------
