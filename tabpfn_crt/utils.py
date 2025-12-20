@@ -50,3 +50,17 @@ def logp_from_full_output(full_out, y_np):
 
     nll = criterion(logits, y_torch)
     return (-nll).detach().cpu().numpy().reshape(-1)
+
+
+def logp_from_proba(probs, y_true, classes):
+    """
+    Compute log p(y_true | x) from class probabilities.
+
+    probs: shape (n, C)
+    y_true: shape (n,)
+    classes: model.classes_
+    """
+    class_to_idx = {c: i for i, c in enumerate(classes)}
+    idx = np.array([class_to_idx[y] for y in y_true])
+    p = probs[np.arange(len(y_true)), idx]
+    return np.log(np.clip(p, 1e-12, None))
