@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 from tabpfn import TabPFNRegressor, TabPFNClassifier
 from tabpfn.constants import ModelVersion
 
-from .utils import is_categorical, logp_from_full_output
+from .utils import is_categorical, logp_from_full_output, logp_from_proba
 
 def tabpfn_crt(
     X,
@@ -66,8 +66,12 @@ def tabpfn_crt(
     )
     model_y.fit(X_tr, y_tr)
 
-    full_plus = model_y.predict(X_ev, output_type="full")
-    logp_plus = logp_from_full_output(full_plus, y_ev)
+    if y_is_cat:
+        probs_plus = model_y.predict_proba(X_ev)
+        logp_plus = logp_from_proba(probs_plus, y_ev, model_y.classes_)
+    else:
+        full_plus = model_y.predict(X_ev, output_type="full")
+        logp_plus = logp_from_full_output(full_plus, y_ev)
 
     # ---------------------------
     # Model for Xj | X_-j
@@ -98,8 +102,12 @@ def tabpfn_crt(
     X_ev_masked = X_ev.copy()
     X_ev_masked[:, j] = np.asarray(xj_hat)
 
-    full_minus = model_y.predict(X_ev_masked, output_type="full")
-    logp_minus = logp_from_full_output(full_minus, y_ev)
+    if y_is_cat:
+        probs_minus = model_y.predict_proba(X_ev_masked)
+        logp_minus = logp_from_proba(probs_minus, y_ev, model_y.classes_)
+    else:
+        full_minus = model_y.predict(X_ev_masked, output_type="full")
+        logp_minus = logp_from_full_output(full_minus, y_ev)
 
     T_obs = np.mean(logp_plus)
 
@@ -167,9 +175,12 @@ def tabpfn_crt(
         X_ev_null = X_ev.copy()
         X_ev_null[:, j] = np.asarray(xj_null)
 
-
-        full_null = model_y.predict(X_ev_null, output_type="full")
-        logp_null = logp_from_full_output(full_null, y_ev)
+        if y_is_cat:
+            probs_null = model_y.predict_proba(X_ev_null)
+            logp_null = logp_from_proba(probs_null, y_ev, model_y.classes_)
+        else:
+            full_null = model_y.predict(X_ev_null, output_type="full")
+            logp_null = logp_from_full_output(full_null, y_ev)
 
         T_null[b] = np.mean(logp_null)
     # ---------------------------
