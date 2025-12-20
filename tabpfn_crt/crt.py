@@ -6,7 +6,6 @@ from tabpfn.constants import ModelVersion
 
 from .utils import is_categorical, logp_from_full_output
 
-
 def tabpfn_crt(
     X,
     y,
@@ -45,7 +44,7 @@ def tabpfn_crt(
     rng = np.random.RandomState(seed)
 
     # ---------------------------
-    # Train / evaluation split
+    # Split
     # ---------------------------
     X_tr, X_ev, y_tr, y_ev = train_test_split(
         np.asarray(X),
@@ -56,9 +55,9 @@ def tabpfn_crt(
     )
 
     # ---------------------------
-    # Fit predictive model for y | X
+    # Model for y | X
     # ---------------------------
-    y_is_cat = is_categorical(y_tr, max_unique_cat)
+    y_is_cat = _is_categorical(y_tr, max_unique_cat)
     ModelY = TabPFNClassifier if y_is_cat else TabPFNRegressor
 
     model_y = ModelY.create_default_for_version(
@@ -68,17 +67,16 @@ def tabpfn_crt(
     model_y.fit(X_tr, y_tr)
 
     full_plus = model_y.predict(X_ev, output_type="full")
-    logp_plus = logp_from_full_output(full_plus, y_ev)
-    T_obs = np.mean(logp_plus)
+    logp_plus = _logp_from_full(full_plus, y_ev)
 
     # ---------------------------
-    # Fit conditional model for X_j | X_-j
+    # Model for Xj | X_-j
     # ---------------------------
     Xm_tr = np.delete(X_tr, j, axis=1)
     Xm_ev = np.delete(X_ev, j, axis=1)
     xj_tr = X_tr[:, j]
 
-    xj_is_cat = is_categorical(xj_tr, max_unique_cat)
+    xj_is_cat = _is_categorical(xj_tr, max_unique_cat)
     ModelXJ = TabPFNClassifier if xj_is_cat else TabPFNRegressor
 
     model_xj = ModelXJ.create_default_for_version(
@@ -88,27 +86,58 @@ def tabpfn_crt(
     model_xj.fit(Xm_tr, xj_tr)
 
     # ---------------------------
+    # Observed T_obs
+    # ---------------------------
+    if xj_is_cat:
+        probs = model_xj.predict_proba(Xm_ev)
+        classes = model_xj.classes_
+        xj_hat = classes[np.argmax(probs, axis=1)]
+    else:
+        xj_hat = model_xj.predict(Xm_ev, output_type="mean")
+
+    X_ev_masked = X_ev.copy()
+    X_ev_masked[:, j] = np.asarray(xj_hat)
+
+    full_minus = model_y.predict(X_ev_masked, output_type="full")
+    logp_minus = _logp_from_full(full_minus, y_ev)
+
+    T_obs = np.mean(logp_plus)
+
+    # ---------------------------
     # Precompute conditional sampler
     # ---------------------------
     if not xj_is_cat:
-        quantiles = np.linspace(0, 1, K)
-        Q = model_xj.predict(
-            Xm_ev,
-            output_type="quantiles",
-            quantiles=quantiles,
+        q_grid = np.linspace(0, 1, K).tolist()
+        Q = np.asarray(
+            model_xj.predict(
+                Xm_ev,
+                output_type="quantiles",
+                quantiles=q_grid,
+            )
         )
         if Q.shape[0] != K:
-            Q = Q.T  # ensure (K, n_eval)
+            Q = Q.T  # ensure (K, n_ev)
 
     # ---------------------------
-    # CRT null distribution
+    # Null distribution
     # ---------------------------
-    n_ev = X_ev.shape[0]
     T_null = np.zeros(B)
+    n_ev = X_ev.shape[0]
 
     for b in range(B):
         if xj_is_cat:
             probs = model_xj.predict_proba(Xm_ev)
+
+            if not np.all(np.isfinite(probs)):
+                i = np.argwhere(~np.isfinite(probs))[0][0]
+                print("Non-finite probs at row", i, probs[i])
+                raise ValueError("bad probs")
+            row_sums = probs.sum(axis=1)
+            if not np.allclose(row_sums, 1.0, atol=1e-6):
+                i = np.argmax(np.abs(row_sums - 1.0))
+                print("Bad prob sum at row", i, row_sums[i], probs[i])
+                raise ValueError("probabilities not normalized")
+
             xj_null = np.array([
                 rng.choice(model_xj.classes_, p=probs[i])
                 for i in range(n_ev)
@@ -118,36 +147,72 @@ def tabpfn_crt(
             xj_null = Q[idx, np.arange(n_ev)]
 
             bad = ~np.isfinite(xj_null)
-            tries = 0
+            max_resample = 10
+            n_try = 0
+
             while bad.any():
-                if tries >= 10:
-                    raise RuntimeError("Non-finite CRT samples after retries")
+                if n_try >= max_resample:
+                    raise RuntimeError(
+                        f"CRT quantile sampling produced non-finite values after {max_resample} retries"
+                    )
+
+                # resample ONLY the bad positions
                 idx_bad = rng.randint(0, K, size=bad.sum())
                 xj_null[bad] = Q[idx_bad, np.where(bad)[0]]
+
                 bad = ~np.isfinite(xj_null)
-                tries += 1
+                n_try += 1
+
 
         X_ev_null = X_ev.copy()
-        X_ev_null[:, j] = xj_null
+        X_ev_null[:, j] = np.asarray(xj_null)
+
 
         full_null = model_y.predict(X_ev_null, output_type="full")
-        logp_null = logp_from_full_output(full_null, y_ev)
+        logp_null = _logp_from_full(full_null, y_ev)
+
         T_null[b] = np.mean(logp_null)
+    # ---------------------------
+    # p-value (right-tailed)
+    # ---------------------------
+    p_value = float((1 + np.sum(T_null >= T_obs)) / (B + 1))
 
     # ---------------------------
-    # p-value
+    # Human-readable interpretation
     # ---------------------------
-    p_value = (1 + np.sum(T_null >= T_obs)) / (B + 1)
+    reject = p_value <= alpha
+
+    if reject:
+        relevance_stmt = (
+            f"Result: REJECT H0 at α = {alpha:.2f}.\n"
+            f"Interpretation: The variable X[{j}] provides information about the "
+            f"target Y that is not explained by the remaining covariates."
+        )
+    else:
+        relevance_stmt = (
+            f"Result: FAIL TO REJECT H0 at α = {alpha:.2f}.\n"
+            f"Interpretation: There is no evidence that X[{j}] provides additional "
+            f"information about the target Y beyond the remaining covariates."
+        )
+
+    summary_stmt = (
+        "\n=== Conditional Randomization Test (TabPFN) ===\n"
+        f"p-value: {p_value:.4g}\n"
+        f"{relevance_stmt}"
+    )
+
+    print(summary_stmt)
 
     return {
         "p_value": float(p_value),
-        "reject_null": bool(p_value <= alpha),
+        "reject_null": bool(reject),
         "alpha": alpha,
-        "T_obs": float(T_obs),
+        "T_obs": T_obs,
         "T_null": T_null,
+        "interpretation": relevance_stmt,
         "y_is_categorical": y_is_cat,
         "xj_is_categorical": xj_is_cat,
         "B": B,
-        "K": None if xj_is_cat else K,
+        "K": K if not xj_is_cat else None,
         "j": int(j),
     }
