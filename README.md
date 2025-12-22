@@ -39,11 +39,36 @@ Given data (X, y) and a feature index j, the procedure:
 4. Generates a null distribution by resampling X_j from its conditional distribution
 5. Computes a right-tailed p-value via the Conditional Randomization Test
 
+
 Crucially:
 - TabPFN is treated as a fixed predictive model
 - No Bayesian correctness or uncertainty calibration is assumed
 - Validity relies on the CRT framework, not on TabPFN being probabilistically correct
 
+
+----------------------------------------------------------------------
+Empirical Validation
+----------------------------------------------------------------------
+
+We provide preliminary empirical results illustrating the calibration
+properties of the TabPFN-based Conditional Randomization Test.
+
+![CRT null p-value QQ plot](paper/qq.png)
+
+**Figure 1.** QQ plot of empirical CRT p-values under the null hypothesis
+against the Uniform(0,1) distribution. Approximate alignment with the
+diagonal indicates proper Type I error control.
+
+![CRT p-value calibration](paper/ROC.png)
+
+**Figure 2.** Empirical CDFs of CRT p-values for relevant and irrelevant
+features. P-values for irrelevant features are approximately uniform,
+while relevant features exhibit strong left-skew, indicating power.
+
+These results are intended as sanity checks rather than exhaustive
+benchmarks. Theoretical validity of the procedure follows from the CRT
+framework; empirical performance depends on the quality of the
+conditional model for X_j | X_-j.
 
 ----------------------------------------------------------------------
 Scope and Limitations
