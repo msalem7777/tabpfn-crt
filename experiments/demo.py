@@ -280,8 +280,6 @@ for rep in range(N_REPEATS):
         for j in tqdm(range(p), desc=f"Testing features ({p})"):
 
             xj = X[:, j]
-            if _is_categorical(xj):
-                continue
 
             res = tabpfn_crt(
                 X=X,
