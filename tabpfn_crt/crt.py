@@ -98,7 +98,7 @@ def tabpfn_crt(
     # Precompute conditional sampler
     # ---------------------------
     if not xj_is_cat:
-        q_grid = np.linspace(0, 1, K).tolist()
+        q_grid = np.linspace(0, 1, K)
         Q = np.asarray(
             model_xj.predict(
                 Xm_ev,
@@ -110,6 +110,7 @@ def tabpfn_crt(
             Q = Q.T  # ensure (K, n_ev)
     elif xj_is_cat:
         probs = model_xj.predict_proba(Xm_ev)
+        cdf = np.cumsum(probs, axis=1)
 
         if not np.all(np.isfinite(probs)):
             i = np.argwhere(~np.isfinite(probs))[0][0]
@@ -126,13 +127,13 @@ def tabpfn_crt(
     # ---------------------------
     T_null = np.zeros(B)
     n_ev = X_ev.shape[0]
+    X_ev_null = X_ev.copy()
 
     for b in range(B):
         if xj_is_cat:
-            xj_null = np.array([
-                rng.choice(model_xj.classes_, p=probs[i])
-                for i in range(n_ev)
-            ])
+            u = rng.rand(n_ev, 1)
+            idx = (u <= cdf).argmax(axis=1)
+            xj_null = model_xj.classes_[idx]
         else:
             idx = rng.randint(0, K, size=n_ev)
             xj_null = Q[idx, np.arange(n_ev)]
@@ -154,7 +155,6 @@ def tabpfn_crt(
                 bad = ~np.isfinite(xj_null)
                 n_try += 1
 
-        X_ev_null = X_ev.copy()
         X_ev_null[:, j] = np.asarray(xj_null)
         
         if y_is_cat:
