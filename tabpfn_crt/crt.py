@@ -74,6 +74,11 @@ def tabpfn_crt(
         logp_plus = logp_from_full_output(full_plus, y_ev)
 
     # ---------------------------
+    # Observed T_obs
+    # ---------------------------
+    T_obs = np.mean(logp_plus)
+
+    # ---------------------------
     # Model for Xj | X_-j
     # ---------------------------
     Xm_tr = np.delete(X_tr, j, axis=1)
@@ -88,28 +93,6 @@ def tabpfn_crt(
         device=device,
     )
     model_xj.fit(Xm_tr, xj_tr)
-
-    # ---------------------------
-    # Observed T_obs
-    # ---------------------------
-    if xj_is_cat:
-        probs = model_xj.predict_proba(Xm_ev)
-        classes = model_xj.classes_
-        xj_hat = classes[np.argmax(probs, axis=1)]
-    else:
-        xj_hat = model_xj.predict(Xm_ev, output_type="mean")
-
-    X_ev_masked = X_ev.copy()
-    X_ev_masked[:, j] = np.asarray(xj_hat)
-
-    if y_is_cat:
-        probs_minus = model_y.predict_proba(X_ev_masked)
-        logp_minus = logp_from_proba(probs_minus, y_ev, model_y.classes_)
-    else:
-        full_minus = model_y.predict(X_ev_masked, output_type="full")
-        logp_minus = logp_from_full_output(full_minus, y_ev)
-
-    T_obs = np.mean(logp_plus)
 
     # ---------------------------
     # Precompute conditional sampler
@@ -171,10 +154,9 @@ def tabpfn_crt(
                 bad = ~np.isfinite(xj_null)
                 n_try += 1
 
-
         X_ev_null = X_ev.copy()
         X_ev_null[:, j] = np.asarray(xj_null)
-
+        
         if y_is_cat:
             probs_null = model_y.predict_proba(X_ev_null)
             logp_null = logp_from_proba(probs_null, y_ev, model_y.classes_)
