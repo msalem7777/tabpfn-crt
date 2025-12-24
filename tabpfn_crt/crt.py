@@ -108,6 +108,18 @@ def tabpfn_crt(
         )
         if Q.shape[0] != K:
             Q = Q.T  # ensure (K, n_ev)
+    elif xj_is_cat:
+        probs = model_xj.predict_proba(Xm_ev)
+
+        if not np.all(np.isfinite(probs)):
+            i = np.argwhere(~np.isfinite(probs))[0][0]
+            print("Non-finite probs at row", i, probs[i])
+            raise ValueError("bad probs")
+        row_sums = probs.sum(axis=1)
+        if not np.allclose(row_sums, 1.0, atol=1e-6):
+            i = np.argmax(np.abs(row_sums - 1.0))
+            print("Bad prob sum at row", i, row_sums[i], probs[i])
+            raise ValueError("probabilities not normalized")
 
     # ---------------------------
     # Null distribution
@@ -117,18 +129,6 @@ def tabpfn_crt(
 
     for b in range(B):
         if xj_is_cat:
-            probs = model_xj.predict_proba(Xm_ev)
-
-            if not np.all(np.isfinite(probs)):
-                i = np.argwhere(~np.isfinite(probs))[0][0]
-                print("Non-finite probs at row", i, probs[i])
-                raise ValueError("bad probs")
-            row_sums = probs.sum(axis=1)
-            if not np.allclose(row_sums, 1.0, atol=1e-6):
-                i = np.argmax(np.abs(row_sums - 1.0))
-                print("Bad prob sum at row", i, row_sums[i], probs[i])
-                raise ValueError("probabilities not normalized")
-
             xj_null = np.array([
                 rng.choice(model_xj.classes_, p=probs[i])
                 for i in range(n_ev)
