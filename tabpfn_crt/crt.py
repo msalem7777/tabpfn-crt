@@ -63,6 +63,7 @@ def tabpfn_crt(
     model_y = ModelY.create_default_for_version(
         ModelVersion.V2,
         device=device,
+        fit_mode="fit_with_cache",
     )
     model_y.fit(X_tr, y_tr)
 
@@ -91,6 +92,7 @@ def tabpfn_crt(
     model_xj = ModelXJ.create_default_for_version(
         ModelVersion.V2,
         device=device,
+        fit_mode="fit_with_cache",
     )
     model_xj.fit(Xm_tr, xj_tr)
 
